@@ -166,7 +166,7 @@ func getCatalogeFromDB(db *sql.DB) ([]Cataloge, error) {
 }
 
 func getItemsFromDB(db *sql.DB) ([]Item, error) {
-	rows, err := db.Query("SELECT Id, Name, Seller, CatalogeId, Description, Price, Icon, Reviews, Discount, latitude, longitude FROM Item")
+	rows, err := db.Query("SELECT Id, Name, Seller, CatalogeId, Description, Price, Icon, Reviews, Discount, Latitude, Longitude FROM Item")
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +322,7 @@ func addItem(c *gin.Context) {
 		return
 	}
 
-	stmt, err := db.Prepare("INSERT INTO Item(Name, Seller, CatalogeId, Description, Price, Icon, Reviews, Discount) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO Item(Name, Seller, CatalogeId, Description, Price, Icon, Reviews, Discount, Latitude, Longitude) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -331,7 +331,7 @@ func addItem(c *gin.Context) {
 
 	reviewsStr := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(item.Reviews)), ","), "[]")
 
-	_, err = stmt.Exec(item.Name, item.Seller, item.CatalogeId, item.Description, item.Price, item.Icon, reviewsStr, item.Discount)
+	_, err = stmt.Exec(item.Name, item.Seller, item.CatalogeId, item.Description, item.Price, item.Icon, reviewsStr, item.Discount, item.Latitude, item.Longitude)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
