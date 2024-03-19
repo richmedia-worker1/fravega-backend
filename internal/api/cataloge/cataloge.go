@@ -9,6 +9,7 @@ import (
 
 	"database/sql"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -212,6 +213,21 @@ func parseReviews(reviewsStr string) []int {
 	return reviews
 }
 
+func getCatalogeFromDBById(db *sql.DB, id int) (*Cataloge, error) {
+	row := db.QueryRow("SELECT Id, Name, Icon FROM Cataloge WHERE Id = ?", id)
+
+	var cataloge Cataloge
+	err := row.Scan(&cataloge.Id, &cataloge.Name, &cataloge.Icon)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Возвращаем nil, если запись не найдена
+		}
+		return nil, err
+	}
+
+	return &cataloge, nil
+}
+
 var Cataloges []Cataloge
 var Items []Item
 
@@ -237,11 +253,172 @@ func Setup(rg *gin.RouterGroup) {
 	}
 
 	api := rg.Group("cataloge")
+	api.Use(cors.Default())
 	api.GET("", getCataloge)
 	api.GET("items", getItems)
 	api.POST("", addCataloge)  // Новый маршрут для добавления Cataloge
 	api.POST("items", addItem) // Новый маршрут для добавления Item
+	api.PUT(":id", updateCataloge)
+	api.PUT("items/:id", updateItem)
+	api.GET(":id", getCatalogeById)
+	api.DELETE(":id", deleteCataloge)
+	api.DELETE("items/:id", deleteItem)
+}
 
+func deleteItem(c *gin.Context) {
+	db, err := initDB()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer db.Close()
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item ID"})
+		return
+	}
+
+	_, err = db.Exec("DELETE FROM Item WHERE Id = ?", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Item deleted successfully"})
+}
+
+func deleteCataloge(c *gin.Context) {
+	db, err := initDB()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer db.Close()
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cataloge ID"})
+		return
+	}
+
+	// Удаление связанных Item
+	_, err = db.Exec("DELETE FROM Item WHERE CatalogeId = ?", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Удаление Cataloge
+	_, err = db.Exec("DELETE FROM Cataloge WHERE Id = ?", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Cataloge and associated items deleted successfully"})
+}
+
+func getCatalogeById(c *gin.Context) {
+	db, err := initDB()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer db.Close()
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cataloge ID"})
+		return
+	}
+
+	cataloge, err := getCatalogeFromDBById(db, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if cataloge == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Cataloge not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"cataloge": cataloge})
+}
+
+func updateItem(c *gin.Context) {
+	db, err := initDB()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer db.Close()
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item ID"})
+		return
+	}
+
+	var item Item
+	if err := c.BindJSON(&item); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	stmt, err := db.Prepare("UPDATE Item SET Name=?, Seller=?, CatalogeId=?, Description=?, Price=?, Icon=?, Reviews=?, Discount=?, Latitude=?, Longitude=? WHERE Id=?")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer stmt.Close()
+
+	reviewsStr := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(item.Reviews)), ","), "[]")
+
+	_, err = stmt.Exec(item.Name, item.Seller, item.CatalogeId, item.Description, item.Price, item.Icon, reviewsStr, item.Discount, item.Latitude, item.Longitude, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Item updated successfully"})
+}
+
+func updateCataloge(c *gin.Context) {
+	db, err := initDB()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer db.Close()
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid cataloge ID"})
+		return
+	}
+
+	var cataloge Cataloge
+	if err := c.BindJSON(&cataloge); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	stmt, err := db.Prepare("UPDATE Cataloge SET Name=?, Icon=? WHERE Id=?")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(cataloge.Name, cataloge.Icon, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Cataloge updated successfully"})
 }
 
 func getCataloge(c *gin.Context) {
