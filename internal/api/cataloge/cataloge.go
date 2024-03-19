@@ -29,6 +29,8 @@ type Item struct {
 	Icon        string
 	Reviews     []int
 	Discount    int
+	Latitude    float64
+	Longitude   float64
 }
 
 func initDB() (*sql.DB, error) {
@@ -61,6 +63,8 @@ func initDB() (*sql.DB, error) {
             Icon TEXT,
             Reviews TEXT,
             Discount INTEGER,
+			Latitude    REAL,
+			Longitude   REAL,
             FOREIGN KEY (CatalogeId) REFERENCES Cataloge(Id)
         )
     `)
@@ -79,7 +83,7 @@ func initDB() (*sql.DB, error) {
 		{Id: 7, Name: "Herramientas y Construcción", Icon: "https://imgbly.com/ib/jqYgf7msIL.png"},
 	}
 	Items = []Item{
-		{Id: 0, CatalogeId: 0, Name: "Smart TV 32\" HD Samsung UN32T4300A", Seller: "Samsung", Price: 289.999, Description: "the super smart tv", Reviews: []int{5, 5, 4, 3, 5}, Discount: 50, Icon: "https://imgbly.com/ib/40vMjKAnoX.png"},
+		{Id: 0, CatalogeId: 0, Name: "Smart TV 32\" HD Samsung UN32T4300A", Seller: "Samsung", Price: 289.999, Description: "the super smart tv", Reviews: []int{5, 5, 4, 3, 5}, Discount: 50, Icon: "https://imgbly.com/ib/40vMjKAnoX.png", Latitude: 37.78825, Longitude: -122.4324},
 		{Id: 1, CatalogeId: 0, Name: "Smart TV 32\" HD Samsung UN32T4300A", Seller: "Samsung", Price: 289.999, Description: "the super smart tv", Reviews: []int{5, 5, 4, 3, 5}, Icon: "https://imgbly.com/ib/40vMjKAnoX.png"},
 	}
 
@@ -126,12 +130,12 @@ func initData(db *sql.DB, catalogs []Cataloge, items []Item) error {
 	}
 	for _, i := range items {
 		if !itemMap[i.Id] {
-			stmt, err := db.Prepare("INSERT INTO Item(Id, Name, Seller, CatalogeId, Description, Price, Icon, Reviews, Discount) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			stmt, err := db.Prepare("INSERT INTO Item(Id, Name, Seller, CatalogeId, Description, Price, Icon, Reviews, Discount, Latitude, Longitude) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 			if err != nil {
 				return err
 			}
 			reviewsStr := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(i.Reviews)), ","), "[]")
-			_, err = stmt.Exec(i.Id, i.Name, i.Seller, i.CatalogeId, i.Description, i.Price, i.Icon, reviewsStr, i.Discount)
+			_, err = stmt.Exec(i.Id, i.Name, i.Seller, i.CatalogeId, i.Description, i.Price, i.Icon, reviewsStr, i.Discount, i.Latitude, i.Longitude)
 			if err != nil {
 				return err
 			}
@@ -162,7 +166,7 @@ func getCatalogeFromDB(db *sql.DB) ([]Cataloge, error) {
 }
 
 func getItemsFromDB(db *sql.DB) ([]Item, error) {
-	rows, err := db.Query("SELECT Id, Name, Seller, CatalogeId, Description, Price, Icon, Reviews, Discount FROM Item")
+	rows, err := db.Query("SELECT Id, Name, Seller, CatalogeId, Description, Price, Icon, Reviews, Discount, latitude, longitude FROM Item")
 	if err != nil {
 		return nil, err
 	}
@@ -172,8 +176,14 @@ func getItemsFromDB(db *sql.DB) ([]Item, error) {
 	for rows.Next() {
 		var i Item
 		var reviewsStr string
-		if err := rows.Scan(&i.Id, &i.Name, &i.Seller, &i.CatalogeId, &i.Description, &i.Price, &i.Icon, &reviewsStr, &i.Discount); err != nil {
-			return nil, err
+		if err := rows.Scan(&i.Id, &i.Name, &i.Seller, &i.CatalogeId, &i.Description, &i.Price, &i.Icon, &reviewsStr, &i.Discount, &i.Latitude, &i.Longitude); err != nil {
+			if strings.Contains(err.Error(), "converting NULL to float64 is unsupported") {
+				// Если ошибка связана с преобразованием NULL в float64, заменяем значения на 0.0
+				i.Latitude = 0.0
+				i.Longitude = 0.0
+			} else {
+				return nil, err
+			}
 		}
 		i.Reviews = parseReviews(reviewsStr)
 		items = append(items, i)
